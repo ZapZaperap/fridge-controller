@@ -1,0 +1,11 @@
+---
+all:
+  children:
+    fridge_controllers:
+      hosts:
+        fridge_test:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3
+          fridge_controller_allowed_architectures:
+            - aarch64
+            - x86_64

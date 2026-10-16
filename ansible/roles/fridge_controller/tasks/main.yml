@@ -1,0 +1,106 @@
+---
+- name: Require the confirmed production platform and installation layout
+  ansible.builtin.assert:
+    that:
+      - ansible_facts["distribution"] == "Debian"
+      - ansible_facts["distribution_major_version"] == "13"
+      - ansible_facts["architecture"] in fridge_controller_allowed_architectures
+      - fridge_controller_directory == "/home/josias/fridge-controller"
+      - fridge_controller_user == "josias"
+      - fridge_controller_group == "josias"
+      - fridge_controller_service_name == "fridge-controller"
+      - fridge_controller_password_file == fridge_controller_directory ~ "/mqtt-password"
+    fail_msg: >-
+      This role currently reproduces the confirmed production installation.
+      Review the bundled configuration and service unit before changing its layout.
+
+- name: Gather service states before deployment changes
+  ansible.builtin.service_facts: {}
+
+- name: Remember whether the controller was running
+  ansible.builtin.set_fact:
+    fridge_controller_was_running: >-
+      {{ ansible_facts['services'].get(fridge_controller_service_name ~ '.service', {}).get('state', 'stopped') == 'running' }}
+
+- name: Inspect existing MQTT password file metadata
+  ansible.builtin.stat:
+    path: "{{ fridge_controller_password_file }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: fridge_controller_password_stat
+
+- name: Require an existing nonempty regular password file
+  ansible.builtin.assert:
+    that:
+      - fridge_controller_password_stat.stat.exists
+      - fridge_controller_password_stat.stat.isreg | default(false)
+      - (fridge_controller_password_stat.stat.size | default(0)) > 0
+    fail_msg: >-
+      Provision the controller MQTT password file outside Ansible first.
+      This role preserves its contents and cannot provision a replacement Pi yet.
+
+- name: Install Python deployment prerequisites
+  ansible.builtin.apt:
+    name: "{{ fridge_controller_system_packages }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure the controller installation directory exists
+  ansible.builtin.file:
+    path: "{{ fridge_controller_directory }}"
+    state: directory
+    owner: "{{ fridge_controller_user }}"
+    group: "{{ fridge_controller_group }}"
+    mode: "0755"
+
+- name: Set existing password file ownership and permissions
+  ansible.builtin.file:
+    path: "{{ fridge_controller_password_file }}"
+    state: file
+    owner: "{{ fridge_controller_user }}"
+    group: "{{ fridge_controller_group }}"
+    mode: "0600"
+  no_log: true
+  diff: false
+
+- name: Install confirmed Python dependencies in the controller virtual environment
+  become_user: "{{ fridge_controller_user }}"
+  ansible.builtin.pip:
+    name: "{{ item.key }}=={{ item.value }}"
+    state: present
+    virtualenv: "{{ fridge_controller_directory }}/.venv"
+    virtualenv_command: python3 -m venv
+  loop: "{{ fridge_controller_python_packages | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}=={{ item.value }}"
+  notify: Restart fridge controller
+
+- name: Install controller application and configuration
+  ansible.builtin.copy:
+    src: "{{ fridge_controller_repository_root }}/controller/{{ item }}"
+    dest: "{{ fridge_controller_directory }}/{{ item }}"
+    owner: "{{ fridge_controller_user }}"
+    group: "{{ fridge_controller_group }}"
+    mode: "0600"
+  loop:
+    - controller.py
+    - config.yaml
+  notify: Restart fridge controller
+
+- name: Install the existing systemd unit
+  ansible.builtin.copy:
+    src: "{{ fridge_controller_repository_root }}/systemd/fridge-controller.service"
+    dest: "/etc/systemd/system/{{ fridge_controller_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd for fridge controller
+    - Restart fridge controller
+
+- name: Apply pending controller service changes
+  ansible.builtin.meta: flush_handlers

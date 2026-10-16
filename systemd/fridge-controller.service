@@ -1,0 +1,22 @@
+[Unit]
+Description=Fridge temperature controller
+After=network-online.target mosquitto.service
+Wants=network-online.target
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+User=josias
+Group=josias
+WorkingDirectory=/home/josias/fridge-controller
+ExecStart=/home/josias/fridge-controller/.venv/bin/python \
+    /home/josias/fridge-controller/controller.py \
+    /home/josias/fridge-controller/config.yaml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+KillSignal=SIGTERM
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

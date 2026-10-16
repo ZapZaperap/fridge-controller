@@ -1,0 +1,10 @@
+---
+- name: Reload systemd for fridge controller
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart fridge controller
+  ansible.builtin.systemd_service:
+    name: "{{ fridge_controller_service_name }}.service"
+    state: restarted
+  when: fridge_controller_was_running | bool

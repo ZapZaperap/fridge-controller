@@ -1,0 +1,50 @@
+mqtt:
+  broker: localhost
+  port: 1883
+  username: fridge-controller
+  password_file: /home/josias/fridge-controller/mqtt-password
+  client_id: fridge-controller
+
+  keg_topic: fridge-sensor/sensor/keg_wall_temperature/state
+  air_topic: fridge-sensor/sensor/fridge_air_temperature/state
+  shelly_rpc_topic: splug1/rpc
+  shelly_response_topic: fridge-controller/rpc
+  status_prefix: fridge-controller
+
+control:
+  setpoint: 11.0
+  hysteresis:
+    on_above: 0.3
+    off_below: 0.3
+
+  # Used only when the keg-wall sensor is stale but the air sensor is healthy.
+  degraded_air_setpoint: 11.0
+  degraded_air_hysteresis:
+    on_above: 0.3
+    off_below: 0.3
+
+  minimum_off_time: 300
+  minimum_on_time: 120
+  sensor_stale_after: 60
+  minimum_air_temperature: 4.0
+
+  # Reject obviously implausible sensor readings.
+  valid_temperature_min: -20.0
+  valid_temperature_max: 50.0
+
+startup:
+  # If true, the controller starts by commanding OFF and then waits the full
+  # minimum_off_time before it may turn the fridge on.
+  enforce_minimum_off_time: false
+
+runtime:
+  loop_interval: 1.0
+  status_publish_interval: 10.0
+  shelly_status_interval: 15.0
+  rpc_timeout: 5.0
+  command_retry_delay: 5.0
+  config_reload_interval: 2.0
+
+shelly:
+  failsafe_timeout: 60
+  failsafe_refresh_interval: 20
