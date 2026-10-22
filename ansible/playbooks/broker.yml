@@ -1,0 +1,7 @@
+---
+- name: Manage shared broker topic permissions
+  hosts: fridge_controllers
+  gather_facts: false
+  become: true
+  roles:
+    - mosquitto_acl

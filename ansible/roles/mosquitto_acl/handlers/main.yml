@@ -1,0 +1,6 @@
+---
+- name: Reload Mosquitto topic permissions
+  ansible.builtin.systemd_service:
+    name: mosquitto.service
+    state: reloaded
+  when: mosquitto_acl_was_running | bool

@@ -9,3 +9,7 @@ __pycache__/
 
 # ESPHome generated files
 .esphome/
+
+# Downloaded local Telegraf test binary and archive
+/telegraf-1.39.3/
+/telegraf-1.39.3_linux_amd64.tar.gz

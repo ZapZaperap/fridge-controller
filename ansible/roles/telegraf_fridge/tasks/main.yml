@@ -1,0 +1,128 @@
+---
+- name: Require verified MQTT read-only permissions
+  ansible.builtin.assert:
+    that:
+      - fridge_telemetry_mqtt_acl_verified | default(false) | bool
+    fail_msg: >-
+      Verify the telemetry identity's read access and denied writes before
+      deploying. Set fridge_telemetry_mqtt_acl_verified=true only afterward.
+
+- name: Gather existing service states
+  ansible.builtin.service_facts: {}
+
+- name: Require an existing Telegraf service
+  ansible.builtin.assert:
+    that:
+      - "'telegraf.service' in ansible_facts.services"
+
+- name: Remember whether Telegraf was running
+  ansible.builtin.set_fact:
+    fridge_telegraf_was_running: >-
+      {{ ansible_facts.services['telegraf.service'].state == 'running' }}
+
+- name: Inspect externally provisioned MQTT environment file metadata
+  ansible.builtin.stat:
+    path: /etc/telegraf/fridge.env
+    follow: false
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: fridge_telegraf_environment
+
+- name: Require a protected nonempty environment file
+  ansible.builtin.assert:
+    that:
+      - fridge_telegraf_environment.stat.exists
+      - fridge_telegraf_environment.stat.isreg | default(false)
+      - (fridge_telegraf_environment.stat.size | default(0)) > 0
+      - (fridge_telegraf_environment.stat.uid | default(-1)) == 0
+      - (fridge_telegraf_environment.stat.mode | default('')) == '0600'
+    fail_msg: >-
+      Provision /etc/telegraf/fridge.env outside Git as root:root mode 0600.
+      It must define FRIDGE_MQTT_SERVER, FRIDGE_MQTT_USERNAME,
+      and FRIDGE_MQTT_PASSWORD. Contents are not inspected by this role.
+
+- name: Inspect the existing Telegraf configuration directory
+  ansible.builtin.stat:
+    path: /etc/telegraf/telegraf.d
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: fridge_telegraf_config_directory
+
+- name: Require the confirmed configuration directory
+  ansible.builtin.assert:
+    that:
+      - fridge_telegraf_config_directory.stat.isdir | default(false)
+
+- name: Bound the existing debug file output
+  ansible.builtin.blockinfile:
+    path: /etc/telegraf/telegraf.conf
+    insertafter: '^[ \t]*\[\[outputs\.file\]\][ \t]*$'
+    marker: "# {mark} ANSIBLE MANAGED DEBUG OUTPUT ROTATION"
+    block: |
+      rotation_max_size = "10MB"
+      rotation_max_archives = 1
+    backup: true
+    validate: >-
+      /usr/bin/python3 -c
+      'import sys,tomllib; outputs=tomllib.load(open(sys.argv[1],"rb"))["outputs"]["file"];
+      assert len(outputs)==1 and outputs[0].get("rotation_max_size")=="10MB"
+      and outputs[0].get("rotation_max_archives")==1'
+      %s
+  diff: false
+  notify: Restart Telegraf for fridge telemetry
+
+- name: Route fridge measurements to their retention-limited database
+  ansible.builtin.blockinfile:
+    path: /etc/telegraf/telegraf.conf
+    insertafter: '^[ \t]*\[\[outputs\.influxdb_v3\]\][ \t]*$'
+    marker: "# {mark} ANSIBLE MANAGED FRIDGE DATABASE ROUTING"
+    block: |
+      database_tag = "influxdb_database"
+      exclude_database_tag = true
+    backup: true
+    validate: >-
+      /usr/bin/python3 -c
+      'import sys,tomllib; outputs=tomllib.load(open(sys.argv[1],"rb"))["outputs"]["influxdb_v3"];
+      assert len(outputs)==1 and outputs[0].get("database")=="telegraf"
+      and outputs[0].get("database_tag")=="influxdb_database"
+      and outputs[0].get("exclude_database_tag") is True'
+      %s
+  diff: false
+  notify: Restart Telegraf for fridge telemetry
+
+- name: Install fridge MQTT inputs
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../monitoring/telegraf/fridge.conf.example"
+    dest: /etc/telegraf/telegraf.d/fridge.conf
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: Restart Telegraf for fridge telemetry
+
+- name: Ensure the Telegraf drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/telegraf.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Load the external fridge MQTT environment
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/telegraf.service.d/fridge.conf
+    content: |
+      [Service]
+      EnvironmentFile=/etc/telegraf/fridge.env
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify:
+    - Reload systemd for fridge telemetry
+    - Restart Telegraf for fridge telemetry
+
+- name: Apply pending telemetry service changes
+  ansible.builtin.meta: flush_handlers

@@ -1,0 +1,7 @@
+---
+- name: Manage fridge telemetry ingestion
+  hosts: fridge_controllers
+  gather_facts: false
+  become: true
+  roles:
+    - telegraf_fridge

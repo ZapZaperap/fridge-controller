@@ -1,7 +1,7 @@
 FROM docker.io/library/debian:trixie
 RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ansible-core ca-certificates dbus mosquitto mosquitto-clients passwd \
+    ansible-core ca-certificates dbus mosquitto mosquitto-clients passwd procps \
     sudo systemd systemd-sysv
 COPY controller/controller.py controller/config.yaml /workspace/controller/
 COPY systemd/fridge-controller.service /workspace/systemd/

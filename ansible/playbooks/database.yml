@@ -1,0 +1,17 @@
+---
+- name: Provision the fridge telemetry database
+  hosts: fridge_controllers
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Ensure the agreed database and retention
+      ansible.builtin.script:
+        cmd: >-
+          {{ (playbook_dir ~ '/../../monitoring/influxdb/ensure_fridge_database.py') | quote }}
+          {{ '--check' if ansible_check_mode else '' }}
+        executable: /usr/bin/python3
+      check_mode: false
+      register: fridge_database_result
+      changed_when: >-
+        fridge_database_result.rc == 0 and
+        (fridge_database_result.stdout | from_json).changed

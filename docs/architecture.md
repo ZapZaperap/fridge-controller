@@ -159,12 +159,36 @@ The original installation was performed manually.
 
 Ansible deployment has been implemented and exercised on production. It preserves service runtime state and boot enablement. Production remained inactive and disabled, and the second deployment reported changed=0. See the [production runbook](production-deployment.md).
 
-### Deferred broker improvements
+### Shared broker and monitoring
 
-- Plan and test MQTT topic authorization using Mosquitto ACLs while retaining password-based authentication. Account for all applications using the shared broker before enabling restrictions.
+Mosquitto ACL enforcement is deployed. Named authenticated clients retain
+broad reads, while writes are restricted by account and topic. Only
+fridge-controller may publish to splug1/rpc. The existing password file
+is preserved; include_dir restructuring remains deferred.
+
+Telegraf subscribes directly to the two raw temperature topics and
+fridge-controller/status. It routes fridge measurements to the fridge
+database with 30-day retention; fermentation remains in telegraf with
+infinite retention. The Python controller has no database dependency.
+Telegraf also consumes splug1/events/rpc electrical notifications into
+fridge_shelly, storing power_w, current_a, voltage_v, and energy_wh.
+Stable tags identify device=splug1 and channel=0. Updates were observed
+approximately once per minute; no additional downsampling is applied.
+Missing fields remain absent, and cumulative energy decreases must be
+handled as counter resets rather than negative consumption.
+Both temperatures and electrical readings were verified in Grafana Explore.
+Grafana panels are deferred to the backlog. Production
+controller-status verification remains pending while the controller is
+intentionally inactive. See the [telemetry runbook](../ansible/telemetry-runbook.md)
+for evidence and limits.
+
+The detailed policy, dependencies, discovery work, and acceptance tests are
+recorded in the [TODO roadmap](todo.md#2-mosquitto-acls).
+
+- MQTT topic authorization is deployed using Mosquitto ACLs with password-based authentication. Review required topics and test client compatibility before extending the policy.
 - Evaluate an `include_dir` for modular broker configuration. Determine which fridge-specific settings can be separated without changing behavior for other applications.
 
-These improvements are outside the initial Ansible migration. The initial deployment will preserve the shared broker configuration and password file. Broker changes and restarts require separate review and authorization.
+The initial controller migration preserved the shared broker configuration and password file. The subsequent ACL rollout added topic authorization without include_dir restructuring. Further broker changes and restarts require separate review and authorization.
 
 ## Unresolved questions and operational documentation
 
@@ -173,7 +197,7 @@ Production deployment and metadata verification were performed by the project ow
 - What are the exact ESP32 module, sensor identities, physical wiring, and pull-up resistors?
 - What are the Shelly model, firmware, MQTT settings, response routing, and power-on relay behavior?
 - Do repeated ON requests reset its automatic OFF timer as intended?
-- Where is Mosquitto hosted, and what are its authentication, persistence, and retention settings?
+- What are the shared Mosquitto broker's persistence and retained-message behavior across outages? Its location on the Pi and password-based authentication with ACLs have been established.
 - How are repository files installed into the service layout and secrets provisioned?
 - Is bypassing the first startup OFF wait intentional, and is keg-only operation without an air cutoff acceptable?
 - Is the native ESPHome API used, and are both reboot timeouts intentional?

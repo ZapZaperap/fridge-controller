@@ -1,0 +1,26 @@
+# Candidate only. Validate in isolation before production use.
+# Keep allow_anonymous false and the existing password_file.
+# Broad reads apply only to these named authenticated accounts.
+
+user hydrom
+topic read #
+topic write sensors/hydrom/Hydrom_2d699e/#
+
+user telegraf
+topic read #
+
+user fridge-sensor
+topic read #
+topic write fridge-sensor/#
+
+user splug
+topic read #
+topic write splug1/online
+topic write splug1/events/rpc
+topic write splug1/status/#
+topic write fridge-controller/rpc
+
+user fridge-controller
+topic read #
+topic write fridge-controller/#
+topic write splug1/rpc

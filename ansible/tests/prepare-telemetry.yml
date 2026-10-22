@@ -1,0 +1,155 @@
+---
+- name: Prepare isolated Telegraf fixtures
+  hosts: fridge_controllers
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Inspect the container marker
+      ansible.builtin.stat:
+        path: /run/.containerenv
+      register: telemetry_test_container
+
+    - name: Require local execution inside a container
+      ansible.builtin.assert:
+        that:
+          - ansible_connection == 'local'
+          - telemetry_test_container.stat.exists
+
+    - name: Inspect network interfaces
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "from pathlib import Path; print(','.join(sorted(p.name for p in Path('/sys/class/net').iterdir())))"
+      register: telemetry_test_interfaces
+      changed_when: false
+
+    - name: Require network isolation
+      ansible.builtin.assert:
+        that:
+          - telemetry_test_interfaces.stdout == 'lo'
+
+    - name: Read generated container-only credentials
+      ansible.builtin.slurp:
+        src: /run/fridge-broker-test-credentials.json
+      register: telemetry_test_credentials
+      no_log: true
+
+    - name: Create the test service group
+      ansible.builtin.group:
+        name: telegraf
+        system: true
+
+    - name: Create the test service user
+      ansible.builtin.user:
+        name: telegraf
+        group: telegraf
+        system: true
+        create_home: false
+        shell: /usr/sbin/nologin
+
+    - name: Install the copied test binary
+      ansible.builtin.copy:
+        src: /tmp/telegraf
+        remote_src: true
+        dest: /usr/local/bin/telegraf
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create test configuration directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /etc/telegraf
+        - /etc/telegraf/telegraf.d
+
+    - name: Create the test output directory
+      ansible.builtin.file:
+        path: /var/lib/telegraf
+        state: directory
+        owner: telegraf
+        group: telegraf
+        mode: "0750"
+
+    - name: Provision separate dummy environment files
+      vars:
+        test_password: >-
+          {{ (telemetry_test_credentials.content | b64decode | from_json)['telegraf'] }}
+      ansible.builtin.copy:
+        dest: "/etc/telegraf/{{ item.name }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: "0600"
+      loop:
+        - name: test.env
+          content: |
+            TEST_MQTT_USERNAME=telegraf
+            TEST_MQTT_PASSWORD={{ test_password }}
+        - name: fridge.env
+          content: |
+            FRIDGE_MQTT_SERVER=tcp://127.0.0.1:1883
+            FRIDGE_MQTT_USERNAME=telegraf
+            FRIDGE_MQTT_PASSWORD={{ test_password }}
+      no_log: true
+      diff: false
+
+    - name: Install synthetic fermentation ingestion
+      ansible.builtin.copy:
+        dest: /etc/telegraf/telegraf.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [agent]
+            flush_interval = "1s"
+          [[inputs.mqtt_consumer]]
+            servers = ["tcp://127.0.0.1:1883"]
+            username = "${TEST_MQTT_USERNAME}"
+            password = "${TEST_MQTT_PASSWORD}"
+            topics = ["sensors/hydrom/#"]
+            qos = 1
+            topic_tag = ""
+            tagexclude = ["host"]
+            name_override = "fermentation"
+            data_format = "value"
+            data_type = "float"
+            [[inputs.mqtt_consumer.topic_parsing]]
+              topic = "sensors/hydrom/+/+"
+              tags = "_/_/device/metric"
+          [[outputs.file]]
+            files = ["/var/lib/telegraf/test-metrics.lp"]
+            data_format = "influx"
+
+    - name: Install the container-only Telegraf service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/telegraf.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Isolated Telegraf test
+          After=mosquitto.service
+          [Service]
+          Type=simple
+          User=telegraf
+          Group=telegraf
+          EnvironmentFile=/etc/telegraf/test.env
+          ExecStart=/usr/local/bin/telegraf --config /etc/telegraf/telegraf.conf --config-directory /etc/telegraf/telegraf.d
+          Restart=on-failure
+          RestartSec=5
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Start the fixture service
+      ansible.builtin.systemd_service:
+        name: telegraf.service
+        daemon_reload: true
+        enabled: true
+        state: started

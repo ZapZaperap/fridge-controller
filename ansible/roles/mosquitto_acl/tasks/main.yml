@@ -1,0 +1,75 @@
+---
+- name: Check the installed broker version
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/mosquitto
+      - -h
+  register: mosquitto_acl_version
+  changed_when: false
+  failed_when: mosquitto_acl_version.rc not in [0, 3]
+  check_mode: false
+
+- name: Require the tested broker version
+  ansible.builtin.assert:
+    that:
+      - mosquitto_acl_version.stdout_lines[0] == 'mosquitto version 2.0.21'
+
+- name: Gather existing service states
+  ansible.builtin.service_facts: {}
+
+- name: Require an existing broker service
+  ansible.builtin.assert:
+    that:
+      - "'mosquitto.service' in ansible_facts.services"
+
+- name: Remember whether the broker was running
+  ansible.builtin.set_fact:
+    mosquitto_acl_was_running: >-
+      {{ ansible_facts.services['mosquitto.service'].state == 'running' }}
+
+- name: Read the broker configuration without displaying its contents
+  ansible.builtin.slurp:
+    src: /etc/mosquitto/mosquitto.conf
+  register: mosquitto_acl_configuration
+  no_log: true
+
+- name: Require the confirmed configuration or its ACL-managed successor
+  vars:
+    baseline:
+      - listener 1883
+      - allow_anonymous false
+      - password_file /etc/mosquitto/passwd
+    acl_directive: acl_file /etc/mosquitto/fridge.acl
+    active_lines: >-
+      {{ (mosquitto_acl_configuration.content | b64decode).splitlines()
+         | map('trim') | reject('match', '^(#|$)') | list }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        (active_lines | sort) in
+        [(baseline | sort), ((baseline + [acl_directive]) | sort)]
+    fail_msg: >-
+      Broker configuration differs from the reviewed baseline.
+      Review it before changing the shared broker.
+
+- name: Install the reviewed topic permissions
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../mosquitto/fridge.acl.example"
+    dest: /etc/mosquitto/fridge.acl
+    owner: root
+    group: mosquitto
+    mode: "0640"
+    backup: true
+  notify: Reload Mosquitto topic permissions
+
+- name: Reference the topic permission file
+  ansible.builtin.lineinfile:
+    path: /etc/mosquitto/mosquitto.conf
+    regexp: '^acl_file[ \t]+'
+    line: acl_file /etc/mosquitto/fridge.acl
+    insertafter: EOF
+    backup: true
+  notify: Reload Mosquitto topic permissions
+
+- name: Apply pending topic permission changes
+  ansible.builtin.meta: flush_handlers

@@ -33,6 +33,9 @@ Every ON command requests a 60-second Shelly automatic OFF timer; the controller
 
 See [docs/architecture.md](docs/architecture.md) for exact boundaries, MQTT topics, and failure-handling limits.
 
+See the [TODO roadmap](docs/todo.md) for telemetry, MQTT write restrictions,
+and failure notifications, including discovery work and acceptance criteria.
+
 ## Runtime requirements and installation layout
 
 The controller requires Python with `paho-mqtt>=2.1,<3` and `PyYAML>=6,<7`, as specified in `controller/requirements.txt`. The optional `controller/watch-fridge-sensors.py` also requires the external `mosquitto_sub` command.
@@ -46,6 +49,17 @@ The supplied service expects `controller.py`, `config.yaml`, `mqtt-password`, an
 The system was originally configured and developed directly on the devices.
 
 The initial Ansible migration is complete. Deployment was verified on the production Pi, and an unchanged second run reported `changed=0`.
+
+MQTT write restrictions and fridge temperature ingestion are deployed.
+Telegraf writes fridge measurements to the `fridge` database with 30-day
+retention; fermentation remains in `telegraf` with infinite retention.
+Both temperatures were verified in Grafana Explore, fermentation ingestion
+continued, and a repeat telemetry deployment reported `changed=0`.
+Controller-status ingestion remains unverified in production while the
+controller is intentionally inactive. Shelly power, current, voltage, and
+cumulative energy ingestion are deployed and verified. Grafana panels are
+deferred to the backlog; notifications remain pending.
+See the [telemetry runbook](ansible/telemetry-runbook.md).
 
 The files collected from the running system are the starting point for this migration.
 

@@ -1,0 +1,10 @@
+---
+- name: Reload systemd for fridge telemetry
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart Telegraf for fridge telemetry
+  ansible.builtin.systemd_service:
+    name: telegraf.service
+    state: restarted
+  when: fridge_telegraf_was_running | bool

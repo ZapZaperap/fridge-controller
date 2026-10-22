@@ -1,0 +1,12 @@
+{
+  "mode": "NORMAL",
+  "reason": "keg_within_hysteresis",
+  "setpoint": 11,
+  "output_requested": true,
+  "output_actual": true,
+  "keg_sensor_age": 3.5,
+  "air_sensor_age": 1,
+  "air_safety_active": false,
+  "mqtt_connected": true,
+  "shelly_command_failures": 0
+}

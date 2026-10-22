@@ -1,0 +1,123 @@
+# MQTT input fragment; changes require rollout review before deployment.
+# Provision these environment variables outside the repository:
+# FRIDGE_MQTT_SERVER, FRIDGE_MQTT_USERNAME, FRIDGE_MQTT_PASSWORD.
+# The existing file and InfluxDB outputs remain in telegraf.conf.
+# The InfluxDB output must route influxdb_database to the reviewed 30-day database.
+
+[[inputs.mqtt_consumer]]
+  servers = ["${FRIDGE_MQTT_SERVER}"]
+  username = "${FRIDGE_MQTT_USERNAME}"
+  password = "${FRIDGE_MQTT_PASSWORD}"
+  topics = ["fridge-sensor/sensor/keg_wall_temperature/state"]
+  qos = 1
+  topic_tag = ""
+  tagexclude = ["host"]
+  name_override = "fridge_temperature"
+  data_format = "value"
+  data_type = "float"
+  [inputs.mqtt_consumer.tags]
+    device = "fridge-sensor"
+    metric = "keg_wall_temperature"
+    influxdb_database = "fridge"
+
+[[inputs.mqtt_consumer]]
+  servers = ["${FRIDGE_MQTT_SERVER}"]
+  username = "${FRIDGE_MQTT_USERNAME}"
+  password = "${FRIDGE_MQTT_PASSWORD}"
+  topics = ["fridge-sensor/sensor/fridge_air_temperature/state"]
+  qos = 1
+  topic_tag = ""
+  tagexclude = ["host"]
+  name_override = "fridge_temperature"
+  data_format = "value"
+  data_type = "float"
+  [inputs.mqtt_consumer.tags]
+    device = "fridge-sensor"
+    metric = "fridge_air_temperature"
+    influxdb_database = "fridge"
+
+[[inputs.mqtt_consumer]]
+  servers = ["${FRIDGE_MQTT_SERVER}"]
+  username = "${FRIDGE_MQTT_USERNAME}"
+  password = "${FRIDGE_MQTT_PASSWORD}"
+  topics = ["fridge-controller/status"]
+  qos = 1
+  topic_tag = ""
+  tagexclude = ["host"]
+  data_format = "json_v2"
+  [inputs.mqtt_consumer.tags]
+    device = "fridge-controller"
+    influxdb_database = "fridge"
+  [[inputs.mqtt_consumer.json_v2]]
+    measurement_name = "fridge_controller"
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "mode"
+      type = "string"
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "reason"
+      type = "string"
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "setpoint"
+      type = "float"
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "output_requested"
+      type = "bool"
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "output_actual"
+      type = "bool"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "keg_sensor_age"
+      type = "float"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "air_sensor_age"
+      type = "float"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "air_safety_active"
+      type = "bool"
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "mqtt_connected"
+      type = "bool"
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "shelly_command_failures"
+      type = "int"
+
+# Periodic electrical notifications observed on Shelly Plug M Gen3.
+# Missing fields must remain absent, including on counter-only notifications.
+[[inputs.mqtt_consumer]]
+  servers = ["${FRIDGE_MQTT_SERVER}"]
+  username = "${FRIDGE_MQTT_USERNAME}"
+  password = "${FRIDGE_MQTT_PASSWORD}"
+  topics = ["splug1/events/rpc"]
+  qos = 1
+  topic_tag = ""
+  tagexclude = ["host"]
+  data_format = "json_v2"
+  [inputs.mqtt_consumer.tags]
+    device = "splug1"
+    channel = "0"
+    influxdb_database = "fridge"
+  [[inputs.mqtt_consumer.json_v2]]
+    measurement_name = "fridge_shelly"
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "params.switch:0.apower"
+      rename = "power_w"
+      type = "float"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "params.switch:0.current"
+      rename = "current_a"
+      type = "float"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "params.switch:0.voltage"
+      rename = "voltage_v"
+      type = "float"
+      optional = true
+    [[inputs.mqtt_consumer.json_v2.field]]
+      path = "params.switch:0.aenergy.total"
+      rename = "energy_wh"
+      type = "float"
+      optional = true
